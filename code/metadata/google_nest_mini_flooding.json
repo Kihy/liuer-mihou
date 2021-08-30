@@ -1,0 +1,18 @@
+{
+    "name": "google_nest_mini_flooding",
+    "malicious_file": "../uq_dataset/test.pcap",
+    "init_file": "../experiment/traffic_shaping/init_pcap/google_nest_mini_benign.pcap",
+    "decision_type": "autoencoder",
+    "init_file_len": 57749,
+    "n_dims": 3,
+    "use_seed": false,
+    "optimizer": "pso",
+    "mutate_prob": 0.5,
+    "max_time_window": 1,
+    "max_craft_pkt": 5,
+    "eval_model_path": "../models/uq_google_nest_mini_kitsune.pkl",
+    "eval_threshold": 21187.977025033364,
+    "model_path": "../models/uq_google_nest_mini_surrogate_ae.h5",
+    "threshold": 0.16701106625016998,
+    "base_offset": 0
+}
