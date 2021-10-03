@@ -53,6 +53,8 @@ class FE:
 
         if nstat is not None:
             self.nstat=nstat
+            if log_file:
+                self.nstat.set_netstat_log_path(log_file)
         else:
             self.nstat = ns.netStat(np.nan, self.maxHost, self.maxSess, log_path=log_file)
 

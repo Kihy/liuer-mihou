@@ -127,10 +127,10 @@ def eval_ml(clf, benign, malicious, adversarial, replay, split, name, malicious_
 
     if name in ["lof", "ocsvm"]:
         # inverted since large values are inliers by default
-        benign_score = -clf.score_samples(benign)
-        malicious_score = -clf.score_samples(malicious)
-        adversarial_score = -clf.score_samples(adversarial)
-        replay_score = -clf.score_samples(replay)
+        benign_score = -clf.decision_function(benign)
+        malicious_score = -clf.decision_function(malicious)
+        adversarial_score = -clf.decision_function(adversarial)
+        replay_score = -clf.decision_function(replay)
         np.savetxt(malicious_file + "_{}_score.csv".format(name),
                    malicious_score, delimiter=",")
         np.savetxt(malicious_file + "_adv_{}_score.csv".format(name),
@@ -141,7 +141,7 @@ def eval_ml(clf, benign, malicious, adversarial, replay, split, name, malicious_
         # decision function is shifted so that 0 is threshold
         np.savetxt(malicious_file + "_{}_threshold.csv".format(name),
                    [0], delimiter=",")
-
+        threshold=0
         num_pos = np.sum(benign_score > threshold)
         mal_pos = np.sum(malicious_score > threshold)
         num_pos_adv = np.sum(adversarial_score > threshold)
@@ -244,5 +244,5 @@ def eval_ml_models(benign, malicious, adversarial, replay, clfs, file_name, mali
         eval_ml(clfs[i], benign, malicious, adversarial, replay, split, i,
                 malicious_file, file_name + "_{}".format(i))
 
-    # eval_rrcf(benign, malicious, adversarial, replay, split,
-    #           malicious_file, file_name + "_rrcf")
+    eval_rrcf(benign, malicious, adversarial, replay, split,
+              malicious_file, file_name + "_rrcf")

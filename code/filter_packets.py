@@ -1,7 +1,9 @@
 from scapy.utils import PcapWriter, PcapReader
 from scapy.all import *
 from tqdm import tqdm
-
+import csv
+import os
+import multiprocessing as mp
 
 def filter_packet(file, victim, attacker, attack_name, device_name):
     ben = PcapWriter(
@@ -20,6 +22,27 @@ def filter_packet(file, victim, attacker, attack_name, device_name):
             mal.write(packet)
     print(counter)
     return counter
+
+def filter_packet_with_label(pcap_file, label_file, attack_name):
+    print("processing ",pcap_file)
+    ben = PcapWriter(
+        "../experiment/kitsune/benign/{}.pcap".format(attack_name))
+    mal = PcapWriter(
+        "../experiment/kitsune/malicious/{}.pcap".format(attack_name))
+
+    with open(label_file) as csv_file:
+        if attack_name == "Mirai":
+            l=csv.reader(csv_file)
+        else:
+            l=csv.reader(csv_file)
+            #skip header
+            next(l)
+        for packet, label in tqdm(zip(PcapReader(pcap_file), l)):
+
+            if label[-1]=='0':
+                ben.write(packet)
+            else:
+                mal.write(packet)
 
 
 def filter_benign(file, device_ip, device_name):
@@ -42,9 +65,19 @@ def filter_benign(file, device_ip, device_name):
 
 
 if __name__ == '__main__':
-    # filter_packet("../uq_dataset/25-03-2021.pcap", "192.168.0.152",
-    #               "192.168.0.199", "flooding", "cam_2")
-    filter_benign("../uq_dataset/Benign Samples/whole_week.pcap",
-                  ["192.168.0.101", "192.168.0.102", "192.168.0.111", "192.168.0.121", "192.168.0.122", "192.168.0.131", "192.168.0.141",
-                      "192.168.0.142", "192.168.0.151", "192.168.0.152", "192.168.0.161", "192.168.0.162", "192.168.0.190", "192.168.0.191"],
-                  ["Smartphone_1", "Smartphone_2", "Smart_Clock_1", "Google-Nest-Mini_1", "Google-Nest-Mini_2", "SmartTV", "Lenovo_Bulb_1", "Lenovo_Bulb_2", "Cam_1", "Cam_2", "Smart_Plug_1", "Smart_Plug_2", "Raspberry_Pi_wlan", "Raspberry_Pi_telnet_wlan"])
+    attack_param=[]
+    for attack_name in os.listdir("../Kitsune Datasets"):
+        if not attack_name.endswith(".txt"):
+            if attack_name in ["Mirai","SYN DoS","SSDP Flood","SSL Renegotiation"]:
+                attack_param.append((f"../Kitsune Datasets/{attack_name}/{attack_name}_pcap.pcap",f"../Kitsune Datasets/{attack_name}/{attack_name}_labels.csv",attack_name))
+            else:
+                attack_param.append((f"../Kitsune Datasets/{attack_name}/{attack_name}_pcap.pcapng",f"../Kitsune Datasets/{attack_name}/{attack_name}_labels.csv",attack_name))
+
+    print(attack_param)
+    # for i in attack_param:
+        # filter_packet_with_label(*i)
+    with mp.Pool(mp.cpu_count()) as pool:
+        results = [pool.apply_async(filter_packet_with_label, args= i) for i in attack_param]
+
+        for r in results:
+             r.get()

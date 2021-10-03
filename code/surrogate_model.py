@@ -9,6 +9,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.metrics import accuracy_score, precision_score, recall_score
 import pickle
 import sys
+import multiprocessing as mp
 from tqdm import tqdm
 import tensorflow as tf
 import pandas as pd
@@ -24,15 +25,19 @@ class AnomalyDetector(Model):
         encoder = [layers.Dense(i, activation=j) for i, j in structure[1:]]
         decoder = [layers.Dense(i, activation=j)
                    for i, j in structure[::-1][1:]]
+
         self.encoder = tf.keras.Sequential(encoder)
         self.decoder = tf.keras.Sequential(decoder)
 
         print("structure:", structure)
 
-    def call(self, x):
+    def call(self, x, training):
+
         encoded = self.encoder(x)
         decoded = self.decoder(encoded)
-        return decoded
+        mse = tf.keras.losses.mean_squared_error(decoded, x)
+        self.add_loss(mse)
+        return mse
 
 # @tf.function
 
@@ -54,6 +59,52 @@ def get_gradient(model, x):
     return gradient
 
 
+def train_dim_reduce(params):
+    """
+    trains surrogate autoencoder on normal traffic
+
+    Args:
+        params (dict): set of training parameters.
+
+    Returns:
+        type: None, model is saved in model_path
+    """
+
+    autoencoder = AnomalyDetector(
+        structure=[(100, "sigmoid"), (3, "relu")])
+    # autoencoder=MultipleAE()
+    autoencoder.compile(optimizer='adam')
+
+
+    data = None
+    for path in params["paths"]:
+        dataset = pd.read_csv(path, header=0, dtype="float32",
+                              chunksize=10000000, usecols=list(range(100)))
+
+        for chunk in tqdm(dataset):
+
+            if data is None:
+                data=chunk
+            else:
+                data = np.concatenate( (data,chunk), axis=0)
+
+
+    scaler = MinMaxScaler()
+    data=scaler.fit_transform(data)
+
+    with open(params["model_path"] + "_scaler.pkl", "wb") as scaler_file:
+        pickle.dump(scaler, scaler_file)
+        print("scaler saved at", params["model_path"] + "_scaler.pkl")
+
+    history = autoencoder.fit(data, data,
+                              epochs=params["epochs"],
+                              batch_size=params["batch_size"],
+                              shuffle=params["shuffle"])
+
+    # tf.saved_model.save(autoencoder, params["model_path"])
+    autoencoder.save(params["model_path"])
+
+
 def train_surrogate(params):
     """
     trains surrogate autoencoder on normal traffic
@@ -65,31 +116,35 @@ def train_surrogate(params):
         type: None, model is saved in model_path
     """
 
-    dataframe = pd.read_csv(params["path"], header=0)
-    raw_data = dataframe.values
+    autoencoder = AnomalyDetector(
+        structure=[(100, "sigmoid"), (32, "relu"), (8, "relu"), (2, "relu")])
+    # autoencoder=MultipleAE()
+    autoencoder.compile(optimizer='adam')
 
-    data = raw_data[:, :100]
-
-    data = data.astype(np.float32)
+    dataset = pd.read_csv(params["path"], header=0, dtype="float32",
+                          chunksize=10000000, usecols=list(range(100)))
 
     scaler = MinMaxScaler()
+    print("preprocessing data")
+    for chunk in tqdm(dataset):
+        scaler.partial_fit(chunk)
 
-    data = scaler.fit_transform(data)
-
-    with open(params["model_path"][:-3] + "_scaler.pkl", "wb") as scaler_file:
+    with open(params["model_path"] + "_scaler.pkl", "wb") as scaler_file:
         pickle.dump(scaler, scaler_file)
-        print("scaler saved at", params["model_path"][:-3] + "_scaler.pkl")
+        print("scaler saved at", params["model_path"] + "_scaler.pkl")
 
-    autoencoder = AnomalyDetector(structure=[(100, "sigmoid"), (32, "relu"), (8, "relu"), (2, "relu")])
-    # autoencoder=MultipleAE()
-    autoencoder.compile(optimizer='adam', loss='mse')
+    dataset = pd.read_csv(params["path"], header=0, dtype="float32",
+                          chunksize=10000000, usecols=list(range(100)))
 
-    history = autoencoder.fit(data, data,
-                              epochs=1,
-                              batch_size=params["batch_size"],
-                              shuffle=False)
+    for chunk in tqdm(dataset):
+        chunk = scaler.transform(chunk)
+        history = autoencoder.fit(chunk, chunk,
+                                  epochs=1,
+                                  batch_size=params["batch_size"],
+                                  shuffle=False)
 
-    tf.saved_model.save(autoencoder, params["model_path"])
+    # tf.saved_model.save(autoencoder, params["model_path"])
+    autoencoder.save(params["model_path"])
 
 
 def eval_surrogate(path, model_path, threshold=None, out_image=None, ignore_index=0, record_scores=False, meta_file=None, record_prediction=False, y_true=None):
@@ -110,8 +165,7 @@ def eval_surrogate(path, model_path, threshold=None, out_image=None, ignore_inde
 
     """
     print("loading from", model_path)
-    autoencoder = tf.keras.models.load_model(
-        model_path)
+    autoencoder = tf.keras.models.load_model(model_path)
     t = threshold
     roc_auc = 1
 
@@ -130,18 +184,11 @@ def eval_surrogate(path, model_path, threshold=None, out_image=None, ignore_inde
 
     else:
         colours = "b"
-    dataframe = pd.read_csv(path, header=0)
+    dataset = pd.read_csv(path, header=0,
+                          chunksize=10000000, usecols=list(range(100)))
 
-    raw_data = dataframe.values[ignore_index:]
-
-    data = raw_data[:, 0:100]
-    with open(model_path[:-3] + "_scaler.pkl", "rb") as scaler_file:
+    with open(model_path + "_scaler.pkl", "rb") as scaler_file:
         scaler = pickle.load(scaler_file)
-
-    data = scaler.transform(data)
-
-    # if model_path[-1].isdigit():
-    #     data = squeeze_features(data, int(model_path[-1]))
 
     if out_image == None:
         out_image = path[:-4] + "_ae_rmse.png"
@@ -149,32 +196,29 @@ def eval_surrogate(path, model_path, threshold=None, out_image=None, ignore_inde
     counter = 0
     input_file = open(path, "r")
     input_file.readline()
-    rmse_array = np.array([])
+    rmse_array = []
 
-    chunks = np.ceil(data.shape[0] / 1024.)
-    tbar = tqdm(total=chunks)
-    for fv in np.array_split(data, chunks):
+    for chunk in tqdm(dataset):
+        chunk = chunk.astype("float32")
+        chunk = scaler.transform(chunk)
+        anomaly_score = autoencoder(chunk)
 
-        fv = fv.astype(np.float32)
+        rmse_array.extend(anomaly_score)
+        counter += chunk.shape[0]
 
-        reconstructions = autoencoder(fv)
-        train_loss = tf.keras.losses.mse(reconstructions, fv)
-
-        rmse_array = np.concatenate((rmse_array, train_loss))
-        counter += fv.shape[0]
-        tbar.update(1)
-    tbar.close()
     if threshold == None:
         benignSample = np.log(rmse_array)
         mean = np.mean(benignSample)
         std = np.std(benignSample)
         threshold_std = np.exp(mean + 3 * std)
         threshold_max = np.max(rmse_array)
-        threshold = min(threshold_max, threshold_std)
-
+        # threshold = min(threshold_max, threshold_std)
+        threshold=threshold_std
         # threshold=np.percentile(rmse_array,99)
-
+    rmse_array = np.array(rmse_array)
     print("max rmse", np.max(rmse_array))
+    first_greater = np.argmax(rmse_array > threshold)
+    print("first_greater at ", first_greater)
     num_over = (rmse_array > threshold).sum()
 
     if record_scores:
@@ -231,35 +275,75 @@ def eval_surrogate(path, model_path, threshold=None, out_image=None, ignore_inde
 
 
 if __name__ == '__main__':
-    surrogate_model_path = "../models/ku/google_home_surrogate_ae.h5"
-    benign_file = "../ku_dataset/google_home_normal"
-    train_params = {
-        "path": benign_file + ".csv",
-        "model_path": surrogate_model_path,
-        "epochs": 10,
-        "batch_size": 64
-    }
-    # train_surrogate(train_params)
-    # _, threshold = eval_surrogate(benign_file + ".csv", surrogate_model_path,
-    #                               out_image="../ku_dataset/anomaly_plot/google_home_surrogate.png")
-    threshold=0.364
-    print("surrogate threshold", threshold)
+    mal_files=[ "../ku_dataset/port_scan_attack_only.csv",
+               "../ku_dataset/[OS & service detection]traffic_GoogleHome_av_only.csv", "../ku_dataset/flooding_attack_only.csv"]
+    train_surrogate({
+        # the pcap, pcapng, or tsv file to process.
+        "path":  "../ku_dataset/google_home_normal.csv",
+        # directory of kitsune
+        "model_path": "../models/ku/surrogate_ae",
+        "batch_size": 1024
+    })
 
-    malicious_files = ["../ku_dataset/port_scan_attack_only",
-                       "../ku_dataset/[OS & service detection]traffic_GoogleHome_av_only",
-                       "../ku_dataset/flooding_attacker_only"]
-    adversarial_files = ["../experiment/craft_files/port_scan_autoencoder_craft_iter_1",
-                         "../experiment/craft_files/os_autoencoder_craft_iter_1",
-                         "../experiment/craft_files/flooding_autoencoder_craft_iter_1"]
-    replay_files = [
-        "../experiment/replay/ps_a_1",
-        "../experiment/replay/os_a_1",
-        "../experiment/replay/flooding_a_1"]
+    pos, threshold=eval_surrogate(** {"path":"../ku_dataset/google_home_normal.csv",
+                  "model_path":"../models/ku/surrogate_ae",
+                  "threshold": None, "record_scores": False})
+    print(pos, threshold)
+    for i in mal_files:
+        pos,_=eval_surrogate(**{"path": i,
+                     "model_path": "../models/ku/surrogate_ae",
+                     "threshold": threshold, "record_scores": True})
+        print(pos)
 
-    for i in range(len(malicious_files)):
-        pos_malicious, _ = eval_surrogate(malicious_files[i] + ".csv", surrogate_model_path, threshold=threshold,
-                                          out_image="../ku_dataset/anomaly_plot/{}_surro_mal.png".format(malicious_files[i].split("/")[-1]), record_scores=True)
-        pos_adversarial, _ = eval_surrogate(adversarial_files[i] + ".csv", surrogate_model_path, threshold=threshold,
-                                            out_image="../ku_dataset/anomaly_plot/{}_surro_mal.png".format(adversarial_files[i].split("/")[-1]), record_scores=False)
-        pos_replay, _ = eval_surrogate(replay_files[i] + ".csv", surrogate_model_path, threshold=threshold,
-                                       out_image="../ku_dataset/anomaly_plot/{}_surro_mal.png".format(replay_files[i].split("/")[-1]), record_scores=False)
+    train_params = []
+    eval_params = []
+    mal_params = []
+    benign_pos_data = []
+    threshold_data = []
+    mal_pos_data = []
+    num_packets_benign = {"Active Wiretap": 1355474,
+                          "ARP MitM": 1358996,
+                          "Fuzzing": 1811357,
+                          "Mirai": 121622,
+                          "OS Scan": 1632152,
+                          "SSDP Flood": 2637663,
+                          "SSL Renegotiation": 2114920,
+                          "SYN DoS": 2764239,
+                          "Video Injection": 2369903,
+                          }
+    for attack_name in sorted(num_packets_benign.keys()):
+        # normalize input
+
+        num_packets = num_packets_benign[attack_name] - 1
+        train_param = {
+            # the pcap, pcapng, or tsv file to process.
+            "path": f"../experiment/kitsune/benign/{attack_name}.csv",
+            # directory of kitsune
+            "model_path": f"../models/kitsune/{attack_name}",
+            "batch_size": 1024
+        }
+
+        eval_param = {"path": f"../experiment/kitsune/benign/{attack_name}.csv",
+                      "model_path": f"../models/kitsune/{attack_name}",
+                      "threshold": None, "out_image": f"../Kitsune Datasets/plots/benign/{attack_name}_surrogate.png", "record_scores": False}
+
+        # train_surrogate(train_param)
+
+        # benign_pos, threshold = eval_surrogate(**eval_param)
+
+        # benign_pos_data.append(benign_pos)
+        # threshold_data.append(threshold)
+        threshold = 0.11068933550926413
+        mal_param = {"path": f"../experiment/kitsune/malicious/{attack_name}.csv",
+                     "model_path": f"../models/kitsune/{attack_name}",
+                     "threshold": threshold, "out_image": f"../Kitsune Datasets/plots/malicious/{attack_name}_surrogate.png", "record_scores": True}
+
+        # mal_pos=eval_surrogate(**mal_param)
+        # mal_pos_data.append(mal_pos)
+
+    # print("threshold:")
+    # print(threshold_data)
+    # print("benign_pos:")
+    # print(benign_pos_data)
+    # print("mal_pos")
+    # print(mal_pos_data)

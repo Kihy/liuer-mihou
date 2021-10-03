@@ -11,6 +11,7 @@ import tensorflow as tf
 from pyswarms.backend.topology import Random, Star, Ring
 from topology.traffic import Traffic, create_swarm, plot_contour
 from decimal import *
+from surrogate_model import AnomalyDetector
 import pickle
 from itertools import product
 from KitNET.KitNET import KitNET
@@ -23,6 +24,9 @@ from pyswarms.backend.handlers import BoundaryHandler
 import random
 np.random.seed(0)
 
+gpu_devices = tf.config.experimental.list_physical_devices('GPU')
+for device in gpu_devices:
+    tf.config.experimental.set_memory_growth(device, True)
 
 def plot_particle_position(pos_history, gbest, animation_path, limits, label, original_time):
     """
@@ -98,13 +102,20 @@ def packet_gen(ori_pkt, traffic_vector):
         packet[UDP].add_payload(Raw(load="a" * payload_size))
 
     elif packet.haslayer(ARP):
-        packet[IP].remove_payload()
+        if packet.haslayer(IP):
+            packet[IP].remove_payload()
 
-        packet[IP].add_payload(
-            ARP(psrc=int(traffic_vector[1]), pdst=int(traffic_vector[2])))
+            packet[IP].add_payload(
+                ARP(psrc=traffic_vector[3], pdst=traffic_vector[5], hwsrc=traffic_vector[1], hwdst=traffic_vector[2]))
+
+        elif packet.haslayer(Ether):
+            packet[Ether].remove_payload()
+
+            packet[Ether].add_payload(
+                ARP(psrc=traffic_vector[3], pdst=traffic_vector[5], hwsrc=traffic_vector[1], hwdst=traffic_vector[2]))
+
 
         payload_size = int(traffic_vector[-1]) - len(packet)
-
         packet[ARP].add_payload(Raw(load="a" * payload_size))
     # other packets
     else:
@@ -112,9 +123,10 @@ def packet_gen(ori_pkt, traffic_vector):
         payload_size = int(traffic_vector[-1]) - len(packet)
         packet.add_payload(Raw(load="a" * payload_size))
     # packet=Ether(bytes(packet))
-    del packet[IP].len
-    del packet[IP].chksum
-    del packet.len
+    if packet.haslayer(IP):
+        del packet[IP].len
+        del packet[IP].chksum
+        del packet.len
 
     # print(len(packet))
     return packet
@@ -279,15 +291,18 @@ def f(x, decision_func, decision_type, FE, use_seed, prev_pkt_time, max_pkt_size
         cost = np.max(features, axis=1)
     elif decision_type == "autoencoder":
         features = np.array(features)
-        features = np.reshape(features, (n_particles * 6, -1))
+        # features = np.reshape(features, (n_particles * max_craft_pkt, -1))
+        features = np.reshape(features, (-1,100))
+
         costs = decision_func(features)
-        costs = np.reshape(costs, (n_particles, 6))
+        costs = np.reshape(costs, (n_particles, max_craft_pkt+1))
+
         cost = np.max(np.nan_to_num(costs, 0), axis=1)
 
     return cost, craft_batch
 
 
-def craft_adversary(mal_pcap, init_pcap, adv_pcap, mal_pcap_out, decision_type, threshold, model_path, iteration, meta_path=None, use_seed=False, optimizer=None, init_count=0, netstat_path=None, mutate_prob=-1, base_offset=0, log_file=None, n_dims=2, max_time_window=60, max_craft_pkt=5, max_pkt_size=655, max_adv_pkt=None, adv_csv_file=None, animation_folder=None):
+def craft_adversary(mal_pcap, init_pcap, adv_pcap, mal_pcap_out, decision_type, threshold, model_path, iteration, meta_path=None, use_seed=False, optimizer=None, init_count=0, netstat_path=None, mutate_prob=-1, base_offset=0, log_file=None, n_dims=2, max_time_window=60, max_craft_pkt=5, max_pkt_size=655, max_adv_pkt=None, adv_csv_file=None, animation_folder=None, netstat_log_file=None):
     """
     crafts adversarial samples for some attack. first initializes the feature extract with normal traffic. then iterates through
     malicious attack pcap file to find a malcious packet above threshold. The malicious packet is optimized with search algorithm to
@@ -338,36 +353,20 @@ def craft_adversary(mal_pcap, init_pcap, adv_pcap, mal_pcap_out, decision_type, 
     decision_func = get_decision_func(decision_type, model_path)
 
     # whether to write features output directly to csv file
-    write_to_csv = False
+
+
 
     if netstat_path is not None:
         with open(netstat_path, "rb") as m:
             nstat = pickle.load(m)
             init_count = nstat.num_updated
+            print("loading netstat from",netstat_path)
             # print("init count", init_count)
-
-        packets = rdpcap(init_pcap)
-        craft_pcap.write(packets)
 
     else:
 
         # init with benign packets
-        init_extractor = FE(init_pcap, parse_type="scapy",
-                            log_file="../experiment/debug_log.csv")
-
-        if adv_csv_file is not None:
-            write_to_csv = True
-
-            # no need to create init pcap
-            create_init = False
-            output_csv = open(adv_csv_file, "w")
-            headers = init_extractor.nstat.getNetStatHeaders()
-            # print(headers)
-            np.savetxt(output_csv, [headers], fmt="%s", delimiter=",")
-
-        if create_init:
-            init_pcap_file = PcapWriter(
-                "../experiment/traffic_shaping/init_pcap/wiretap.pcap")
+        init_extractor = FE(init_pcap, parse_type="scapy")
 
         t = tqdm(total=init_count)
         pkt_index = 0
@@ -381,10 +380,7 @@ def craft_adversary(mal_pcap, init_pcap, adv_pcap, mal_pcap_out, decision_type, 
             pkt_index += 1
             if traffic_data == []:
                 craft_pcap.write(packet)
-                if create_init:
-                    init_pcap_file.write(packet)
-                np.savetxt(output_csv, [np.full(
-                    features.shape, -1)], delimiter=",")
+                
                 meta_file.write(
                     ",".join([str(pkt_index), str(packet.time), "init_skipped\n"]))
                 continue
@@ -396,24 +392,30 @@ def craft_adversary(mal_pcap, init_pcap, adv_pcap, mal_pcap_out, decision_type, 
                 ",".join([str(pkt_index), str(packet.time), "init\n"]))
             craft_pcap.write(packet)
 
-            if create_init:
-                init_pcap_file.write(packet)
-            if write_to_csv:
-                np.savetxt(output_csv, [features], delimiter=",")
-
         prev_pkt_time = float(packet.time)
 
         # get the database from initial fe to malware fe
         nstat = init_extractor.get_nstat()
-        if create_init:
-            model_path = "../models/netstat/wiretap_normal.pkl"
-            with open(model_path, "wb") as of:
-                pickle.dump(nstat, of)
+
 
     pkt_index = init_count
     prev_non_attack_time = None
     prev_pkt_time = nstat.prev_pkt_time
-    feature_extractor = FE(mal_pcap, parse_type="scapy", nstat=nstat)
+    feature_extractor = FE(mal_pcap, parse_type="scapy", nstat=nstat, log_file=netstat_log_file)
+
+    if adv_csv_file is not None:
+        write_to_csv = True
+
+        output_csv = open(adv_csv_file, "w")
+        original_csv = open(adv_csv_file[:-4]+"_original.csv", "w")
+        headers = feature_extractor.nstat.getNetStatHeaders()
+        # print(headers)
+        output_csv.write(",".join(list(map(str, headers))))
+        output_csv.write("\n")
+        original_csv.write(",".join(list(map(str, headers))))
+        original_csv.write("\n")
+    else:
+        write_to_csv=False
 
     # Set-up hyperparameters
     options = {'c1': 0.7, 'c2': 0.3, 'w': 0.5}
@@ -462,14 +464,18 @@ def craft_adversary(mal_pcap, init_pcap, adv_pcap, mal_pcap_out, decision_type, 
             tmp_pkt.remove_payload()
         min_pkt_len = len(tmp_pkt)
 
+        # get records corresponding to current connection
         db = feature_extractor.nstat.get_records(*traffic_data)
 
         # find original score
         dummy_db = copy.deepcopy(db)
         traffic_data[-2] += offset_time
-        traffic_data[-2] = np.around(traffic_data[-2], decimals=6)
         features = feature_extractor.nstat.update_dummy_db(
             *(traffic_data), dummy_db, False)
+
+        if write_to_csv:
+            original_csv.write(",".join(list(map(str, features))))
+            original_csv.write("\n")
 
         rmse_original = decision_func(features)
 
@@ -481,8 +487,8 @@ def craft_adversary(mal_pcap, init_pcap, adv_pcap, mal_pcap_out, decision_type, 
             features = feature_extractor.nstat.updateGetStats(*traffic_data)
 
             if write_to_csv:
-                row = features
-                np.savetxt(output_csv, [row], delimiter=",")
+                output_csv.write(",".join(list(map(str, features))))
+                output_csv.write("\n")
             # feature_extractor.dummy_nstat.updateGetStats(*traffic_data)
             #
             meta_file.write(
@@ -533,7 +539,7 @@ def craft_adversary(mal_pcap, init_pcap, adv_pcap, mal_pcap_out, decision_type, 
         if cost > threshold:
             num_failed += 1
 
-        if np.random.uniform() < 0.1 or adv_pkt_index == 0:
+        if np.random.uniform() < 0.001 or adv_pkt_index == 0:
 
             limits = [(0, max_time_window), (min_bound[1], max_bound[1])]
             label = ["time", "num_craft"]
@@ -565,7 +571,17 @@ def craft_adversary(mal_pcap, init_pcap, adv_pcap, mal_pcap_out, decision_type, 
             if craft_cost > threshold:
                 craft_failed += 1
 
-            craft_packet = packet_gen(packet, traffic_vector)
+            try:
+                craft_packet = packet_gen(packet, traffic_vector)
+            except Exception as e:
+                print("Packet")
+                packet.show2()
+                print("packet_index", mal_file_index)
+                print("traffic_vector",traffic_vector)
+                print("file:", mal_pcap)
+                raise e
+
+
             total_craft_size += aux[i + max_craft_pkt]
             # print(traffic_vector)
             # craft_packet.show()
@@ -574,7 +590,8 @@ def craft_adversary(mal_pcap, init_pcap, adv_pcap, mal_pcap_out, decision_type, 
             malicious_pcap.write(craft_packet)
             craft_pcap.write(craft_packet)
             if write_to_csv:
-                np.savetxt(output_csv, [features], delimiter=",")
+                output_csv.write(",".join(list(map(str, features))))
+                output_csv.write("\n")
             meta_file.write(
                 ",".join([str(pkt_index), str(craft_packet.time), "craft\n"]))
 
@@ -591,7 +608,8 @@ def craft_adversary(mal_pcap, init_pcap, adv_pcap, mal_pcap_out, decision_type, 
 
         # print("real mal feature", features)
         if write_to_csv:
-            np.savetxt(output_csv, [features], delimiter=",")
+            output_csv.write(",".join(list(map(str, features))))
+            output_csv.write("\n")
 
         true_cost = decision_func(features)
 
@@ -662,9 +680,9 @@ def get_decision_func(decision_type, model_path):
         return kitsune
 
     if decision_type == "autoencoder":
-        model = tf.keras.models.load_model(model_path)
+        model = tf.keras.models.load_model(model_path, custom_objects={"AnomalyDetector":AnomalyDetector})
 
-        with open(model_path[:-3]+"_scaler.pkl", "rb") as scaler_file:
+        with open(model_path+"_scaler.pkl", "rb") as scaler_file:
             scaler = pickle.load(scaler_file)
 
         def autoencoder(features):
@@ -673,12 +691,11 @@ def get_decision_func(decision_type, model_path):
                 features = np.expand_dims(features, axis=0)
             features = scaler.transform(features)
             features = features.astype(np.float32)
-            reconstructions = model.predict(features)
-            true_cost = tf.keras.losses.mse(reconstructions, features)
+            anomaly_score = model(features)
 
             if ndims == 1:
-                true_cost = true_cost[0]
-            return true_cost.numpy()
+                anomaly_score = anomaly_score[0]
+            return anomaly_score.numpy()
         return autoencoder
 
 

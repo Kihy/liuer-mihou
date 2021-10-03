@@ -134,6 +134,10 @@ experiment/traffic_shaping/flooding/*
 ku_dataset/flooding_attacker_only.pcap
 experiment/*.csv
 experiment/replay
+code/evaluations/fig/*
+code/*.txt
+code/get-pip.py
+Kitsune Datasets/
 
 # Spyder project settings
 .spyderproject

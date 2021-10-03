@@ -14,6 +14,7 @@ from KitNET.KitNET import KitNET
 import matplotlib
 import socket
 from evaluations.feature_squeeze import squeeze_features
+import multiprocessing as mp
 matplotlib.use('Agg')
 np.set_printoptions(threshold=np.inf)
 # matplotlib.rcParams['timezone']="Pacific/Auckland"
@@ -79,6 +80,7 @@ def eval_kitsune(path, model_path, threshold=None, ignore_index=-1, out_image=No
     """
     # the pcap, pcapng, or tsv file to process.
     print("evaluting", path)
+    print("meta",meta_file)
     print("kitsune model path ", model_path)
     t = threshold
     roc_auc = 1
@@ -120,6 +122,7 @@ def eval_kitsune(path, model_path, threshold=None, ignore_index=-1, out_image=No
 
         feature_vector = input_file.readline()
         while feature_vector is not '':
+
             if counter < ignore_index:
                 feature_vector = input_file.readline()
 
@@ -156,8 +159,10 @@ def eval_kitsune(path, model_path, threshold=None, ignore_index=-1, out_image=No
             rmse = kitsune.process(fv)
 
             if rmse == 0:
+
                 rmse_array.append(1e-2)
             else:
+
                 rmse_array.append(rmse)
             counter += 1
             tbar.update(1)
@@ -208,6 +213,7 @@ def eval_kitsune(path, model_path, threshold=None, ignore_index=-1, out_image=No
     if record_scores:
         score_path = path[:-4] + "_kitsune_score.csv"
         threshold_path = path[:-4] + "_kitsune_threshold.csv"
+        # print("max_rmse",np.max(rmse_array))
         np.savetxt(score_path, rmse_array, delimiter=",")
         np.savetxt(threshold_path, [threshold], delimiter=",")
         print("score saved to", score_path)
@@ -219,6 +225,7 @@ def eval_kitsune(path, model_path, threshold=None, ignore_index=-1, out_image=No
         print("kitsune prediction saved to", pred_path)
 
     if y_true is None:
+
         fpr, tpr, roc_t = metrics.roc_curve(
             [0 for i in range(len(rmse_array))], rmse_array, drop_intermediate=False)
     else:
@@ -226,6 +233,7 @@ def eval_kitsune(path, model_path, threshold=None, ignore_index=-1, out_image=No
             y_true, rmse_array, drop_intermediate=True)
         roc_auc = metrics.auc(fpr, tpr)
     print("total packets:", len(rmse_array))
+
     if out_image is not None:
         cmap = plt.get_cmap('Set3')
         num_packets = len(rmse_array)
@@ -264,6 +272,8 @@ def eval_kitsune(path, model_path, threshold=None, ignore_index=-1, out_image=No
             for lh in leg.legendHandles:
                 lh._legmarker.set_alpha(1.)
 
+        elif has_meta:
+            ax1.scatter(x_val, rmse_array, s=1,c=colours)
         else:
             ax1.scatter(x_val, rmse_array, s=1, alpha=0.05)
 
@@ -306,54 +316,123 @@ def eval_kitsune(path, model_path, threshold=None, ignore_index=-1, out_image=No
 
 
 if __name__ == '__main__':
-    device_name = "google_home_mini"
-    model_path = "../models/ku/google_home_mini.pkl"
-    normal_traffic_path = "../ku_dataset/google_home_normal.csv"
-    # normal_traffic_path="../ku_dataset/train.csv"
-    num_packets = 14400
-    train_params = {
-        # the pcap, pcapng, or tsv file to process.
-        "path": normal_traffic_path,
-        "packet_limit": np.Inf,  # the number of packets to process,
+    train_params = []
+    eval_params=[]
+    num_packets_benign = {"Active Wiretap": 1355474,
+                          "ARP MitM": 1358996,
+                          "Fuzzing": 1811357,
+                          "Mirai": 121622,
+                          "OS Scan": 1632152,
+                          "SSDP Flood": 2637663,
+                          "SSL Renegotiation": 2114920,
+                          "SYN DoS": 2764239,
+                          "Video Injection": 2369903,
+                          }
+    for attack_name in sorted(num_packets_benign.keys()):
+        num_packets = num_packets_benign[attack_name]-1
+        train_param = {
+            # the pcap, pcapng, or tsv file to process.
+            "path": f"../experiment/kitsune/benign/{attack_name}.csv",
+            "packet_limit": np.Inf,  # the number of packets to process,
 
-        # KitNET params:
-        "maxAE": 10,  # maximum size for any autoencoder in the ensemble layer
-        # the number of instances taken to learn the feature mapping (the ensemble's architecture)
-        "FMgrace": int(0.2 * num_packets),
-        # the number of instances used to train the anomaly detector (ensemble itself)
-        # FMgrace+ADgrace<=num samples in normal traffic
-        "ADgrace": int(0.8 * num_packets),
-        # directory of kitsune
-        "model_path": model_path,
-        "normalize": True
-    }
-    # train_normal(train_params)
-    threshold=0.5025
-    pos_benign,_ = eval_kitsune(
-        normal_traffic_path, model_path, threshold=threshold, out_image="../ku_dataset/anomaly_plot/ku_train.png", record_scores=False)
-    print("benign threshold", threshold)
-    malicious_files = ["../ku_dataset/port_scan_attack_only",
-                       "../ku_dataset/[OS & service detection]traffic_GoogleHome_av_only",
-                       "../ku_dataset/flooding_attacker_only"]
-    adversarial_files = ["../experiment/craft_files/port_scan_autoencoder_craft_iter_1",
-                         "../experiment/craft_files/os_autoencoder_craft_iter_1",
-                         "../experiment/craft_files/flooding_autoencoder_craft_iter_1"]
-    replay_files = [
-        "../experiment/replay/ps_a_1",
-        "../experiment/replay/os_a_1",
-        "../experiment/replay/flooding_a_1"]
+            # KitNET params:
+            "maxAE": 10,  # maximum size for any autoencoder in the ensemble layer
+            # the number of instances taken to learn the feature mapping (the ensemble's architecture)
+            "FMgrace": int(0.2 * num_packets),
+            # the number of instances used to train the anomaly detector (ensemble itself)
+            # FMgrace+ADgrace<=num samples in normal traffic
+            "ADgrace": int(0.8 * num_packets),
+            # directory of kitsune
+            "model_path": f"../models/kitsune/{attack_name}.pkl",
+            "normalize": True
+        }
+        train_params.append(train_param)
+        eval_param={"path":f"../experiment/kitsune/benign/{attack_name}.csv",
+        "model_path":f"../models/kitsune/{attack_name}.pkl",
+         "threshold":None, "out_image":f"../Kitsune Datasets/plots/benign/{attack_name}.png", "record_scores":False}
+        eval_params.append(eval_param)
+    # with mp.Pool(mp.cpu_count()) as pool:
+    #     results = [pool.apply_async(train_normal, args= (i,)) for i in train_params]
+    #
+    #     for r in results:
+    #          r.get()
 
-    for i in range(len(malicious_files)):
+    benign_pos_data=[]
+    threshold_data=[]
+    with mp.Pool(mp.cpu_count()) as pool:
+        results = [pool.apply_async(eval_kitsune, kwds= i) for i in eval_params]
+        for r in results:
+             benign_pos, threshold=r.get()
+             benign_pos_data.append(benign_pos)
+             threshold_data.append(threshold)
 
-        pos_malicious, _ = eval_kitsune(malicious_files[i] + ".csv", model_path, threshold=threshold,
-                                        out_image="../ku_dataset/anomaly_plot/{}_kit_mal.png".format(malicious_files[i].split("/")[-1]), record_scores=True)
-        pos_adversarial, _ = eval_kitsune(adversarial_files[i] + ".csv", model_path, threshold=threshold,
-                                          out_image="../ku_dataset/anomaly_plot/{}_kit_mal.png".format(adversarial_files[i].split("/")[-1]), record_scores=True)
-        pos_replay, _ = eval_kitsune(replay_files[i] + ".csv", model_path, threshold=threshold,
-                                     out_image="../ku_dataset/anomaly_plot/{}_kit_mal.png".format(replay_files[i].split("/")[-1]), record_scores=True)
+    mal_params=[]
+    for i,attack_name in enumerate(sorted(num_packets_benign.keys())):
+        mal_param={"path":f"../experiment/kitsune/malicious/{attack_name}.csv",
+        "model_path":f"../models/kitsune/{attack_name}.pkl",
+         "threshold":threshold_data[i], "out_image":f"../Kitsune Datasets/plots/malicious/{attack_name}.png", "record_scores":True}
+        mal_params.append(mal_param)
+    mal_pos_data=[]
+    with mp.Pool(mp.cpu_count()) as pool:
+        results = [pool.apply_async(eval_kitsune, kwds= i) for i in mal_params]
+        for r in results:
+             mal_pos, _=r.get()
+             mal_pos_data.append(mal_pos)
 
-
-        print(pos_benign, pos_malicious, pos_adversarial, pos_replay)
+    print("threshold:")
+    print(threshold_data)
+    print("benign_pos:")
+    print(benign_pos_data)
+    print("mal_pos")
+    print(mal_pos_data)
+    # device_name = "google_home_mini"
+    # model_path = "../models/ku/google_home_mini.pkl"
+    # normal_traffic_path = "../ku_dataset/google_home_normal.csv"
+    # # normal_traffic_path="../ku_dataset/train.csv"
+    # num_packets = 14400
+    # train_params = {
+    #     # the pcap, pcapng, or tsv file to process.
+    #     "path": normal_traffic_path,
+    #     "packet_limit": np.Inf,  # the number of packets to process,
+    #
+    #     # KitNET params:
+    #     "maxAE": 10,  # maximum size for any autoencoder in the ensemble layer
+    #     # the number of instances taken to learn the feature mapping (the ensemble's architecture)
+    #     "FMgrace": int(0.2 * num_packets),
+    #     # the number of instances used to train the anomaly detector (ensemble itself)
+    #     # FMgrace+ADgrace<=num samples in normal traffic
+    #     "ADgrace": int(0.8 * num_packets),
+    #     # directory of kitsune
+    #     "model_path": model_path,
+    #     "normalize": True
+    # }
+    # # train_normal(train_params)
+    # threshold=0.5025
+    # pos_benign,_ = eval_kitsune(
+    #     normal_traffic_path, model_path, threshold=threshold, out_image="../ku_dataset/anomaly_plot/ku_train.png", record_scores=False)
+    # print("benign threshold", threshold)
+    # malicious_files = ["../ku_dataset/port_scan_attack_only",
+    #                    "../ku_dataset/[OS & service detection]traffic_GoogleHome_av_only",
+    #                    "../ku_dataset/flooding_attacker_only"]
+    # adversarial_files = ["../experiment/craft_files/port_scan_autoencoder_craft_iter_1",
+    #                      "../experiment/craft_files/os_autoencoder_craft_iter_1",
+    #                      "../experiment/craft_files/flooding_autoencoder_craft_iter_1"]
+    # replay_files = [
+    #     "../experiment/replay/ps_a_1",
+    #     "../experiment/replay/os_a_1",
+    #     "../experiment/replay/flooding_a_1"]
+    #
+    # for i in range(len(malicious_files)):
+    #
+    #     pos_malicious, _ = eval_kitsune(malicious_files[i] + ".csv", model_path, threshold=threshold,
+    #                                     out_image="../ku_dataset/anomaly_plot/{}_kit_mal.png".format(malicious_files[i].split("/")[-1]), record_scores=True)
+    #     pos_adversarial, _ = eval_kitsune(adversarial_files[i] + ".csv", model_path, threshold=threshold,
+    #                                       out_image="../ku_dataset/anomaly_plot/{}_kit_mal.png".format(adversarial_files[i].split("/")[-1]), record_scores=True)
+    #     pos_replay, _ = eval_kitsune(replay_files[i] + ".csv", model_path, threshold=threshold,
+    #                                  out_image="../ku_dataset/anomaly_plot/{}_kit_mal.png".format(replay_files[i].split("/")[-1]), record_scores=True)
+    #
+    #
+    #     print(pos_benign, pos_malicious, pos_adversarial, pos_replay)
 
     # eval(normal_traffic_path, model_path, threshold=None,
     #      out_image="../ku_dataset/anomaly_plot/kitsune_normal.png", record_scores=True)

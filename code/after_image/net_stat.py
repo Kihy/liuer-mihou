@@ -65,12 +65,15 @@ class netStat:
         self.HT_H = af.IncStatDB("HT_H",limit=self.HostLimit) #Source Host BW Stats
         self.HT_Hp = af.IncStatDB("HT_Hp",limit=self.SessionLimit)#Source Host BW Stats
 
-        print("log_path:", log_path)
-        if log_path is not None:
-            print("netstat log_path",log_path)
-            self.log_file=open(log_path,"w")
+
+        if log_path:
+            self.set_netstat_log_path(log_path)
         else:
-            self.log_file =None
+            self.log_file = None
+
+    def set_netstat_log_path(self, log_path):
+        print("netstat log_path",log_path)
+        self.log_file = open(log_path,"w")
 
     def getHT(self):
         return {"HT_jit":self.HT_jit,
