@@ -470,6 +470,7 @@ def craft_adversary(mal_pcap, init_pcap, adv_pcap, mal_pcap_out, decision_type, 
         # find original score
         dummy_db = copy.deepcopy(db)
         traffic_data[-2] += offset_time
+        traffic_data[-2] = np.around(traffic_data[-2], decimals=6)
         features = feature_extractor.nstat.update_dummy_db(
             *(traffic_data), dummy_db, False)
 
@@ -487,8 +488,8 @@ def craft_adversary(mal_pcap, init_pcap, adv_pcap, mal_pcap_out, decision_type, 
             features = feature_extractor.nstat.updateGetStats(*traffic_data)
 
             if write_to_csv:
-                output_csv.write(",".join(list(map(str, features))))
-                output_csv.write("\n")
+                row = features
+                np.savetxt(output_csv, [row], delimiter=",")
             # feature_extractor.dummy_nstat.updateGetStats(*traffic_data)
             #
             meta_file.write(
@@ -590,8 +591,7 @@ def craft_adversary(mal_pcap, init_pcap, adv_pcap, mal_pcap_out, decision_type, 
             malicious_pcap.write(craft_packet)
             craft_pcap.write(craft_packet)
             if write_to_csv:
-                output_csv.write(",".join(list(map(str, features))))
-                output_csv.write("\n")
+                np.savetxt(output_csv, [features], delimiter=",")
             meta_file.write(
                 ",".join([str(pkt_index), str(craft_packet.time), "craft\n"]))
 
@@ -608,8 +608,7 @@ def craft_adversary(mal_pcap, init_pcap, adv_pcap, mal_pcap_out, decision_type, 
 
         # print("real mal feature", features)
         if write_to_csv:
-            output_csv.write(",".join(list(map(str, features))))
-            output_csv.write("\n")
+            np.savetxt(output_csv, [features], delimiter=",")
 
         true_cost = decision_func(features)
 

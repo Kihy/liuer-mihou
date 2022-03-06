@@ -45,7 +45,7 @@ class netStat:
             self.Lambdas = [5,3,1,.1,.01]
         else:
             self.Lambdas = Lambdas
-        self.clean_up_round=100
+        self.clean_up_round=4000
         # number of pkts updated
         self.num_updated=0
 
@@ -65,9 +65,10 @@ class netStat:
         self.HT_H = af.IncStatDB("HT_H",limit=self.HostLimit) #Source Host BW Stats
         self.HT_Hp = af.IncStatDB("HT_Hp",limit=self.SessionLimit)#Source Host BW Stats
 
-
-        if log_path:
-            self.set_netstat_log_path(log_path)
+        print("log_path:", log_path)
+        if log_path is not None:
+            print("netstat log_path",log_path)
+            self.log_file=open(log_path,"w")
         else:
             self.log_file = None
 
@@ -343,8 +344,9 @@ class netStat:
             self.HT_H.cleanOutOldRecords(self.cutoffWeight, timestamp)
             self.HT_jit.cleanOutOldRecords(self.cutoffWeight, timestamp)
             self.HT_Hp.cleanOutOldRecords(self.cutoffWeight, timestamp)
-
-
+            # print(c1,c2,c3,c4)
+            # print(n1,n2,n3,n4, self.cutoffWeight)
+            # print(self.HT_Hp.stat1d[4].keys())
 
         return record
 

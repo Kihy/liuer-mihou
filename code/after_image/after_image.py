@@ -253,16 +253,18 @@ class IncStatDB:
 
     def get_2d_headers(self):
         return ["radius","magnitude","covariance","pcc"]
+
+
     #cleans out records that have a weight less than the cutoff.
-    #returns number of removed records.
+    #returns number of removed records and records looked through
     def cleanOutOldRecords(self, cutoffWeight, curTime, verbose=False):
         n = 0
+        cleaned=0
         for i in range(len(self.lambdas)):
             for key, inc_stat in dict(self.stat1d[i]).items():
                 inc_stat.processDecay(curTime)
+                cleaned+=1
                 if inc_stat.weight() < cutoffWeight:
-                    if verbose and inc_stat.name=="192.168.100.5_23470":
-                        print("cleaning ",inc_stat)
                     # remove all links
                     for other_is in inc_stat.covs:
                         try:
@@ -273,4 +275,4 @@ class IncStatDB:
                     # remove 1d
                     del self.stat1d[i][key]
                     n+=1
-        return n
+        return n, cleaned

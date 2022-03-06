@@ -7,24 +7,25 @@ import KitNET.corClust as CC
 # For more information and citation, please see our NDSS'18 paper: Kitsune: An Ensemble of Autoencoders for Online Network Intrusion Detection
 # For licensing information, see the end of this document
 
+
 class KitNET:
-    #n: the number of features in your input dataset (i.e., x \in R^n)
-    #m: the maximum size of any autoencoder in the ensemble layer
-    #AD_grace_period: the number of instances the network will learn from before producing anomaly scores
-    #FM_grace_period: the number of instances which will be taken to learn the feature mapping. If 'None', then FM_grace_period=AM_grace_period
-    #learning_rate: the default stochastic gradient descent learning rate for all autoencoders in the KitNET instance.
-    #hidden_ratio: the default ratio of hidden to visible neurons. E.g., 0.75 will cause roughly a 25% compression in the hidden layer.
-    #feature_map: One may optionally provide a feature map instead of learning one. The map must be a list,
+    # n: the number of features in your input dataset (i.e., x \in R^n)
+    # m: the maximum size of any autoencoder in the ensemble layer
+    # AD_grace_period: the number of instances the network will learn from before producing anomaly scores
+    # FM_grace_period: the number of instances which will be taken to learn the feature mapping. If 'None', then FM_grace_period=AM_grace_period
+    # learning_rate: the default stochastic gradient descent learning rate for all autoencoders in the KitNET instance.
+    # hidden_ratio: the default ratio of hidden to visible neurons. E.g., 0.75 will cause roughly a 25% compression in the hidden layer.
+    # feature_map: One may optionally provide a feature map instead of learning one. The map must be a list,
     #           where the i-th entry contains a list of the feature indices to be assingned to the i-th autoencoder in the ensemble.
     #           For example, [[2,5,3],[4,0,1],[6,7]]
-    def __init__(self,n,max_autoencoder_size=10,FM_grace_period=None,AD_grace_period=10000,learning_rate=0.1,hidden_ratio=0.75, feature_map = None, normalize=True, input_precision=None, quantize=None):
+    def __init__(self, n, max_autoencoder_size=10, FM_grace_period=None, AD_grace_period=10000, learning_rate=0.1, hidden_ratio=0.75, feature_map=None, normalize=True, input_precision=None, quantize=None):
         # Parameters:
         self.AD_grace_period = AD_grace_period
         if FM_grace_period is None:
             self.FM_grace_period = AD_grace_period
         else:
             self.FM_grace_period = FM_grace_period
-        self.input_precision=input_precision
+        self.input_precision = input_precision
         if max_autoencoder_size <= 0:
             self.m = 1
         else:
@@ -32,90 +33,105 @@ class KitNET:
         self.lr = learning_rate
         self.hr = hidden_ratio
         self.n = n
-        self.normalize=normalize
+        self.normalize = normalize
         # Variables
-        self.n_trained = 0 # the number of training instances so far
-        self.n_executed = 0 # the number of executed instances so far
+        self.n_trained = 0  # the number of training instances so far
+        self.n_executed = 0  # the number of executed instances so far
         self.v = feature_map
         self.ensembleLayer = []
         self.outputLayer = None
-        self.quantize=quantize
+        self.quantize = quantize
         if self.v is None:
-            print("Feature-Mapper: train-mode, Anomaly-Detector: off-mode")
+            pass
+            # print("Feature-Mapper: train-mode, Anomaly-Detector: off-mode")
         else:
             self.__createAD__()
-            print("Feature-Mapper: execute-mode, Anomaly-Detector: train-mode")
-        self.FM = CC.corClust(self.n) #incremental feature cluatering for the feature mapping process
+            # print("Feature-Mapper: execute-mode, Anomaly-Detector: train-mode")
+        # incremental feature cluatering for the feature mapping process
+        self.FM = CC.corClust(self.n)
 
-
-    #If FM_grace_period+AM_grace_period has passed, then this function executes KitNET on x. Otherwise, this function learns from x.
-    #x: a numpy array of length n
-    #Note: KitNET automatically performs 0-1 normalization on all attributes.
-    def process(self,x):
+    # If FM_grace_period+AM_grace_period has passed, then this function executes KitNET on x. Otherwise, this function learns from x.
+    # x: a numpy array of length n
+    # Note: KitNET automatically performs 0-1 normalization on all attributes.
+    def process(self, x):
         # if all -1 it means the packet was ignored
-        if x.all()==-1:
+        if x.all() == -1:
             return 0.
 
-        if self.n_trained > self.FM_grace_period + self.AD_grace_period: #If both the FM and AD are in execute-mode
+        if self.n_trained > self.FM_grace_period + self.AD_grace_period:  # If both the FM and AD are in execute-mode
             return self.execute(x)
         else:
             self.train(x)
             return 0.0
 
-    #force train KitNET on x
-    #returns the anomaly score of x during training (do not use for alerting)
-    def train(self,x):
-        if self.n_trained <= self.FM_grace_period and self.v is None: #If the FM is in train-mode, and the user has not supplied a feature mapping
-            #update the incremetnal correlation matrix
+    # alias so it is compatible with sklearn models, input and output are all 2d arrays
+    def decision_function(self, x):
+        anom_score = self.process(x[0])
+        return [-anom_score]
+
+    # alias for execute for it is compatible with tf models, processes in batches
+    def predict(self, x):
+        return np.array([self.process(x[i]) for i in range(np.array(x).shape[0])])
+
+    # force train KitNET on x
+    # returns the anomaly score of x during training (do not use for alerting)
+    def train(self, x):
+        # If the FM is in train-mode, and the user has not supplied a feature mapping
+        if self.n_trained <= self.FM_grace_period and self.v is None:
+            # update the incremetnal correlation matrix
             self.FM.update(x)
-            if self.n_trained == self.FM_grace_period: #If the feature mapping should be instantiated
+            if self.n_trained == self.FM_grace_period:  # If the feature mapping should be instantiated
                 self.v = self.FM.cluster(self.m)
                 self.__createAD__()
-                print("The Feature-Mapper found a mapping: "+str(self.n)+" features to "+str(len(self.v))+" autoencoders.")
-                print("Feature-Mapper: execute-mode, Anomaly-Detector: train-mode")
-        else: #train
-            ## Ensemble Layer
+                # print("The Feature-Mapper found a mapping: "+str(self.n)+" features to "+str(len(self.v))+" autoencoders.")
+                # print("Feature-Mapper: execute-mode, Anomaly-Detector: train-mode")
+        else:  # train
+            # Ensemble Layer
             S_l1 = np.zeros(len(self.ensembleLayer))
             for a in range(len(self.ensembleLayer)):
                 # make sub instance for autoencoder 'a'
                 xi = x[self.v[a]]
                 S_l1[a] = self.ensembleLayer[a].train(xi)
-            ## OutputLayer
+            # OutputLayer
             self.outputLayer.train(S_l1)
-            if self.n_trained == self.AD_grace_period+self.FM_grace_period:
-                print("Feature-Mapper: execute-mode, Anomaly-Detector: execute-mode")
+            if self.n_trained == self.AD_grace_period + self.FM_grace_period:
+                pass
+                # print("Feature-Mapper: execute-mode, Anomaly-Detector: execute-mode")
         self.n_trained += 1
 
-    #force execute KitNET on x
-    def execute(self,x):
+    # force execute KitNET on x
+    def execute(self, x):
         if self.v is None:
-            raise RuntimeError('KitNET Cannot execute x, because a feature mapping has not yet been learned or provided. Try running process(x) instead.')
+            raise RuntimeError(
+                'KitNET Cannot execute x, because a feature mapping has not yet been learned or provided. Try running process(x) instead.')
         else:
             self.n_executed += 1
-            ## Ensemble Layer
+            # Ensemble Layer
             S_l1 = np.zeros(len(self.ensembleLayer))
             for a in range(len(self.ensembleLayer)):
                 # make sub inst
                 xi = x[self.v[a]]
                 S_l1[a] = self.ensembleLayer[a].execute(xi)
-            ## OutputLayer
+            # OutputLayer
             return self.outputLayer.execute(S_l1)
 
     def __createAD__(self):
         # construct ensemble layer
         for map in self.v:
-            params = AE.dA_params(n_visible=len(map), n_hidden=0, lr=self.lr, corruption_level=0, gracePeriod=0, hiddenRatio=self.hr, normalize=self.normalize, input_precision=self.input_precision, quantize=self.quantize)
+            params = AE.dA_params(n_visible=len(map), n_hidden=0, lr=self.lr, corruption_level=0, gracePeriod=0,
+                                  hiddenRatio=self.hr, normalize=self.normalize, input_precision=self.input_precision, quantize=self.quantize)
             self.ensembleLayer.append(AE.dA(params))
 
         # construct output layer
-        params = AE.dA_params(len(self.v), n_hidden=0, lr=self.lr, corruption_level=0, gracePeriod=0, hiddenRatio=self.hr, normalize=self.normalize,quantize=self.quantize,input_precision=self.input_precision)
+        params = AE.dA_params(len(self.v), n_hidden=0, lr=self.lr, corruption_level=0, gracePeriod=0, hiddenRatio=self.hr,
+                              normalize=self.normalize, quantize=self.quantize, input_precision=self.input_precision)
         self.outputLayer = AE.dA(params)
 
     def get_params(self):
-        return_dict={"ensemble":[]}
+        return_dict = {"ensemble": []}
         for i in range(len(self.ensembleLayer)):
             return_dict["ensemble"].append(self.ensembleLayer[i].get_params())
-        return_dict["output"]=self.outputLayer.get_params()
+        return_dict["output"] = self.outputLayer.get_params()
         return return_dict
 
     def set_params(self, new_param):

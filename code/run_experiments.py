@@ -12,25 +12,6 @@ import json
 
 # step 0: filter raw traffic
 
-attack_name = "flooding"
-
-device_list = ["Smartphone_1", "Smart_Clock_1", "Google-Nest-Mini_1", "SmartTV",
-               "Lenovo_Bulb_1", "Cam_1", "Raspberry_Pi_telnet_wlan"]
-num_packets_list = [2865483, 6390782, 5244602, 2444691,
-                    22047, 854685, 1357782]
-
-kitsune_threshold_list = [0.26067563798903576, 0.2474393225504581, 0.12854936695623007,
-                          0.3263537666616599, 0.1731615464104402, 0.2772845115634913, 0.35942901583575154]
-
-surrogate_threshold_list = [0.025341725544783, 0.01901568913948737, 0.016867547292195827,
-                            0.03210490908376369, 0.06966010147032728, 0.06755883246660233, 0.10791920870542526]
-
-
-attack_list1 = ["UDP_Flooding", "Service_Detection",
-                "SYN_Flooding", "Port_Scanning", "ARP_Spoofing", "ACK_Flooding", "Telnet-brute_Force", "HTTP_Flooding"]
-attack_list2 = ["UDP_Flooding", "Service_Detection",
-                "SYN_Flooding", "Port_Scanning", "ARP_Spoofing", "ACK_Flooding"]
-
 # for index in range(len(device_list)):
 #
 #     device_name = device_list[index]
