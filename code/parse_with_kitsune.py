@@ -9,7 +9,7 @@ np.set_printoptions(suppress=True,
                     formatter={'float_kind': '{:f}'.format})
 
 
-def parse_kitsune(pcap_file, output_file_name, add_label=False, write_prob=1, count=float('Inf'), parse_type="scapy", netstat_path=None, save_netstat=None, add_proto=False, add_time=False,netstat_log_file=None):
+def parse_kitsune(pcap_file, output_file_name, add_label=False, write_prob=1, count=float('Inf'), parse_type="scapy", netstat_path=None, save_netstat=None, add_proto=False, add_time=False, netstat_log_file=None):
     """Short summary.
 
     Args:
@@ -29,18 +29,16 @@ def parse_kitsune(pcap_file, output_file_name, add_label=False, write_prob=1, co
     """
     print("parsing:", pcap_file)
 
-    nstat=None
+    nstat = None
     if netstat_path:
         print("loading netstat from", netstat_path)
         with open(netstat_path, "rb") as m:
             nstat = pickle.load(m)
 
-
-
-    feature_extractor = FE(pcap_file, parse_type=parse_type, nstat=nstat, log_file=netstat_log_file)
+    feature_extractor = FE(pcap_file, parse_type=parse_type,
+                           nstat=nstat, log_file=netstat_log_file)
     # temp=open("tmp.txt","w")
     headers = feature_extractor.nstat.getNetStatHeaders()
-    npy_array = []
     output_file = open(output_file_name, "w")
     label = output_file_name.split('/')[-1]
     if add_label:
@@ -108,7 +106,6 @@ def parse_kitsune(pcap_file, output_file_name, add_label=False, write_prob=1, co
             if add_time:
                 time = traffic_data[-2]
                 features = np.append(features, time)
-            npy_array.append(features)
             features = np.expand_dims(features, axis=0)
             np.savetxt(output_file, features, delimiter=",", fmt="%s")
 
@@ -119,75 +116,6 @@ def parse_kitsune(pcap_file, output_file_name, add_label=False, write_prob=1, co
         with open(save_netstat, "wb") as out:
             pickle.dump(feature_extractor.get_nstat(), out)
 
-    np.save(output_file_name[:-3] + "npy", np.asarray(npy_array))
     output_file.close()
     print("skipped:", skipped)
     print("written:", written)
-
-
-if __name__ == '__main__':
-    # file_name = [# "../ku_dataset/port_scan_attack_only", "../ku_dataset/flooding_attacker_only",
-    # "../ku_dataset/[OS & service detection]traffic_GoogleHome_av_only", "../experiment/traffic_shaping/init_pcap/google_home_normal"]
-    # file_name = ["../ku_dataset/train", "../ku_dataset/test"]
-    file_name = [
-    # "../ku_dataset/google_home_normal",
-    # "../ku_dataset/flooding_attack_only",
-    # "../ku_dataset/[OS & service detection]traffic_GoogleHome_av_only",
-    # "../ku_dataset/port_scan_attack_only",
-
-    # "../ku_dataset/flooding_attacker_only"
-    # "../experiment/traffic_shaping/ku_port_scan/adv/autoencoder_1_5_3_False_pso0.5/iter_0",
-    # "../experiment/traffic_shaping/ku_os_detection/adv/autoencoder_1_5_3_False_pso0.5/iter_0",
-    # "../experiment/traffic_shaping/ku_flooding/adv/autoencoder_1_5_3_False_pso0.5/iter_0"
-
-        # "../experiment/traffic_shaping/init_pcap/cam_2_benign",
-        #     "../uq_dataset/cam_2_flooding",
-        #     "../experiment/traffic_shaping/cam_2_flooding/craft/autoencoder_0.5_5_3_False_pso0.5/craft_iter_1"
-        # "../experiment/traffic_shaping/init_pcap/uq_{}_benign".format(i) for i in ["Smartphone_1", "Smart_Clock_1", "Google-Nest-Mini_1", "SmartTV", "Lenovo_Bulb_1", "Cam_1", "Cam_2", "Smart_Plug_1", "Raspberry_Pi_wlan", "Raspberry_Pi_telnet_wlan"]
-        # "../experiment/traffic_shaping/init_pcap/cam_1_benign",
-        # "../experiment/traffic_shaping/init_pcap/smart_bulb_1_benign"
-    ]
-
-    benign_params=[]
-    malicious_params=[]
-    for attack_name in os.listdir("../Kitsune Datasets"):
-        
-        if not attack_name.endswith(".txt") and attack_name != "plots":
-            malicious_params.append({"pcap_file":f"../experiment/kitsune/malicious/{attack_name}.pcap", "output_file_name": f"../experiment/kitsune/malicious/{attack_name}.csv", "parse_type":"scapy", "add_proto":False, "add_time":False, "netstat_path":f"../experiment/kitsune/benign/{attack_name}_netstat.pkl", "netstat_log_file":f"../experiment/kitsune/malicious/{attack_name}_netstat_log.csv"})
-            benign_params.append({"pcap_file":f"../experiment/kitsune/benign/{attack_name}.pcap", "output_file_name": f"../experiment/kitsune/benign/{attack_name}.csv", "parse_type":"scapy", "add_proto":False, "add_time":False, "save_netstat":f"../experiment/kitsune/benign/{attack_name}_netstat.pkl"})
-
-    # with mp.Pool(mp.cpu_count()) as pool:
-    #     results = [pool.apply_async(parse_kitsune, kwds= i) for i in benign_params]
-    #
-    #     for r in results:
-    #          r.get()
-
-    with mp.Pool(mp.cpu_count()) as pool:
-        results = [pool.apply_async(parse_kitsune, kwds= i) for i in malicious_params]
-
-        for r in results:
-             r.get()
-    # file_name=["../experiment/craft_files/os_autoencoder_craft_iter_1",
-    # "../experiment/craft_files/port_scan_autoencoder_craft_iter_1",
-    # "../experiment/craft_files/flooding_autoencoder_craft_iter_1"]
-
-    #
-    # for i in file_name:
-    #     print("processing file:", i)
-    #     start = time.process_time()
-    #     parse_kitsune(i + ".pcap",  "test.csv",
-    #                   parse_type="tsv", add_proto=False, add_time=False)
-    #     print("time taken:", time.process_time() - start)
-    # for i in file_name:
-    #     print("processing file:", i)
-    #     start = time.process_time()
-    #     parse_kitsune(i + ".pcap",  "test2.csv",
-    #                   parse_type="scapy", add_proto=False, add_time=False)
-    #     print("time taken:", time.process_time() - start)
-    # replay files
-    # attacks=["os","port_scan","flooding"]
-    # df=["autoencoder","kitsune"]
-    # replay_files=["../experiment/craft_files/{}_{}_craft_iter_1".format(i,j) for i,j in product(attacks, df) ]
-    # for i in replay_files:
-    #     print("processing file:", i)
-    #     parse_kitsune(i + ".pcap", i + ".csv", False, parse_type="scapy")

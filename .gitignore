@@ -162,5 +162,14 @@ dmypy.json
 
 # profiling data
 .prof
+anomaly_plot
+code/evaluations/fig
+code/evaluations/npy_dataset
+dataset/*.csv
+dataset/*.pkl
+dataset/malicious/*.csv
+dataset/malicious/*.pkl
+dataset/replay/*.csv
 
+code/metadata
 # End of https://www.toptal.com/developers/gitignore/api/python

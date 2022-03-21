@@ -75,7 +75,6 @@ def train_dim_reduce(params):
     # autoencoder=MultipleAE()
     autoencoder.compile(optimizer='adam')
 
-
     data = None
     for path in params["paths"]:
         dataset = pd.read_csv(path, header=0, dtype="float32",
@@ -84,13 +83,12 @@ def train_dim_reduce(params):
         for chunk in tqdm(dataset):
 
             if data is None:
-                data=chunk
+                data = chunk
             else:
-                data = np.concatenate( (data,chunk), axis=0)
-
+                data = np.concatenate((data, chunk), axis=0)
 
     scaler = MinMaxScaler()
-    data=scaler.fit_transform(data)
+    data = scaler.fit_transform(data)
 
     with open(params["model_path"] + "_scaler.pkl", "wb") as scaler_file:
         pickle.dump(scaler, scaler_file)
@@ -213,7 +211,7 @@ def eval_surrogate(path, model_path, threshold=None, out_image=None, ignore_inde
         threshold_std = np.exp(mean + 3 * std)
         threshold_max = np.max(rmse_array)
         # threshold = min(threshold_max, threshold_std)
-        threshold=threshold_std
+        threshold = threshold_std
         # threshold=np.percentile(rmse_array,99)
     rmse_array = np.array(rmse_array)
     print("max rmse", np.max(rmse_array))
@@ -272,78 +270,3 @@ def eval_surrogate(path, model_path, threshold=None, out_image=None, ignore_inde
         return num_over, threshold
     else:
         return num_over, roc_auc
-
-
-if __name__ == '__main__':
-    mal_files=[ "../ku_dataset/port_scan_attack_only.csv",
-               "../ku_dataset/[OS & service detection]traffic_GoogleHome_av_only.csv", "../ku_dataset/flooding_attack_only.csv"]
-    train_surrogate({
-        # the pcap, pcapng, or tsv file to process.
-        "path":  "../ku_dataset/google_home_normal.csv",
-        # directory of kitsune
-        "model_path": "../models/ku/surrogate_ae",
-        "batch_size": 1024
-    })
-
-    pos, threshold=eval_surrogate(** {"path":"../ku_dataset/google_home_normal.csv",
-                  "model_path":"../models/ku/surrogate_ae",
-                  "threshold": None, "record_scores": False})
-    print(pos, threshold)
-    for i in mal_files:
-        pos,_=eval_surrogate(**{"path": i,
-                     "model_path": "../models/ku/surrogate_ae",
-                     "threshold": threshold, "record_scores": True})
-        print(pos)
-
-    train_params = []
-    eval_params = []
-    mal_params = []
-    benign_pos_data = []
-    threshold_data = []
-    mal_pos_data = []
-    num_packets_benign = {"Active Wiretap": 1355474,
-                          "ARP MitM": 1358996,
-                          "Fuzzing": 1811357,
-                          "Mirai": 121622,
-                          "OS Scan": 1632152,
-                          "SSDP Flood": 2637663,
-                          "SSL Renegotiation": 2114920,
-                          "SYN DoS": 2764239,
-                          "Video Injection": 2369903,
-                          }
-    for attack_name in sorted(num_packets_benign.keys()):
-        # normalize input
-
-        num_packets = num_packets_benign[attack_name] - 1
-        train_param = {
-            # the pcap, pcapng, or tsv file to process.
-            "path": f"../experiment/kitsune/benign/{attack_name}.csv",
-            # directory of kitsune
-            "model_path": f"../models/kitsune/{attack_name}",
-            "batch_size": 1024
-        }
-
-        eval_param = {"path": f"../experiment/kitsune/benign/{attack_name}.csv",
-                      "model_path": f"../models/kitsune/{attack_name}",
-                      "threshold": None, "out_image": f"../Kitsune Datasets/plots/benign/{attack_name}_surrogate.png", "record_scores": False}
-
-        # train_surrogate(train_param)
-
-        # benign_pos, threshold = eval_surrogate(**eval_param)
-
-        # benign_pos_data.append(benign_pos)
-        # threshold_data.append(threshold)
-        threshold = 0.11068933550926413
-        mal_param = {"path": f"../experiment/kitsune/malicious/{attack_name}.csv",
-                     "model_path": f"../models/kitsune/{attack_name}",
-                     "threshold": threshold, "out_image": f"../Kitsune Datasets/plots/malicious/{attack_name}_surrogate.png", "record_scores": True}
-
-        # mal_pos=eval_surrogate(**mal_param)
-        # mal_pos_data.append(mal_pos)
-
-    # print("threshold:")
-    # print(threshold_data)
-    # print("benign_pos:")
-    # print(benign_pos_data)
-    # print("mal_pos")
-    # print(mal_pos_data)

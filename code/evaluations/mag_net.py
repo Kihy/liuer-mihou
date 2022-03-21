@@ -1,8 +1,8 @@
-import keras.regularizers as regs
-from keras.models import Model, load_model
-from keras.layers import Input, Dense, MaxPooling2D, UpSampling2D, AveragePooling2D
-from keras.layers.merge import Average, add
-from keras.layers.core import Lambda
+import tensorflow.keras.regularizers as regs
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.layers import Input, Dense, MaxPooling2D, UpSampling2D, AveragePooling2D
+from tensorflow.keras.layers import Average, add
+from tensorflow.keras.layers import Lambda
 import math
 from itertools import product
 from tqdm import tqdm
@@ -156,8 +156,7 @@ def train_mag_net(training_data):
     raw_data = dataframe.values
 
     # if there are 101 columns, last one is label
-    data = raw_data[:,:100]
-
+    data = raw_data[:, :100]
 
     data = data.astype(np.float32)
 
@@ -195,11 +194,11 @@ def test_mag_net(model_path, train_data, test_data):
         open("../models/magnet_min.csv", "rb"), delimiter=",")
 
     train_df = pd.read_csv(train_data)
-    train = train_df.values[:,:100]
+    train = train_df.values[:, :100]
     train = train.astype(np.float32)
 
     dataframe = pd.read_csv(test_data, header=0)
-    test = dataframe.values[:,:100]
+    test = dataframe.values[:, :100]
     test = test.astype(np.float32)
 
     train = (train - min_val) / (max_val - min_val)
@@ -207,35 +206,36 @@ def test_mag_net(model_path, train_data, test_data):
 
     #find thresholds on benign
     marks = detector_I.mark(train)
-    detector_I_threshold=np.max(marks)
+    detector_I_threshold = np.max(marks)
 
     marks = detector_II.mark(train)
-    detector_II_threshold=np.max(marks)
+    detector_II_threshold = np.max(marks)
 
     reformed = reformer.heal(train)
 
     # transform reformed back to unnormalized
 
-    reformed=reformed*(max_val-min_val)+min_val
+    reformed = reformed*(max_val-min_val)+min_val
     # data=data*(max_val-min_val)+min_val
 
-    training_rmse=[]
+    training_rmse = []
     for i in range(reformed.shape[0]):
         reformed_rmse = kitsune.process(reformed[i])
         training_rmse.append(reformed_rmse)
 
-    kitsune_threshold=np.max(training_rmse)
+    kitsune_threshold = np.max(training_rmse)
 
-    total_mal=np.sum(np.logical_or(detector_I.mark(test)>detector_I_threshold, detector_II.mark(test)>detector_II_threshold))
+    total_mal = np.sum(np.logical_or(detector_I.mark(
+        test) > detector_I_threshold, detector_II.mark(test) > detector_II_threshold))
 
     # heal and detect
     test_heal = reformer.heal(test)
-    test_heal=test_heal*(max_val-min_val)+min_val
-    test_rmse=[]
+    test_heal = test_heal*(max_val-min_val)+min_val
+    test_rmse = []
     for i in range(test_heal.shape[0]):
         reformed_rmse = kitsune.process(test_heal[i])
         test_rmse.append(reformed_rmse)
-    test_failed=np.sum(test_rmse>kitsune_threshold)
+    test_failed = np.sum(test_rmse > kitsune_threshold)
 
     print(total_mal, test_failed)
-    return total_mal,test_failed
+    return total_mal, test_failed

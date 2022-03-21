@@ -17,15 +17,17 @@ matplotlib.rcParams["figure.figsize"] = [15, 6]
 
 def load_dataset(benign_path, malicious_path, adversarial_path, replay_path):
     scaler = MinMaxScaler()
-    benign = np.load(benign_path)
+    benign = np.genfromtxt(benign_path, delimiter=",", skip_header=1)[:, :100]
     # only take first 100 columns
-    benign = scaler.fit_transform(benign[:, :100])
-    malicious = np.load(malicious_path)
-    malicious = scaler.transform(malicious[:, :100])
-    adversarial = np.load(adversarial_path)
-    adversarial = scaler.transform(adversarial[:, :100])
-    replay = np.load(replay_path)
-    replay = scaler.transform(replay[:, :100])
+    benign = scaler.fit_transform(benign)
+    malicious = np.genfromtxt(
+        malicious_path, delimiter=",", skip_header=1)[:, :100]
+    malicious = scaler.transform(malicious)
+    adversarial = np.genfromtxt(
+        adversarial_path, delimiter=",", skip_header=1)[:, :100]
+    adversarial = scaler.transform(adversarial)
+    replay = np.genfromtxt(replay_path, delimiter=",", skip_header=1)[:, :100]
+    replay = scaler.transform(replay)
     return benign, malicious, adversarial, replay
 
 
@@ -77,8 +79,8 @@ def eval_rrcf(benign, malicious, adversarial, replay, split, malicious_file, out
         replay_scores.append(tree.codisp("test"))
         tree.forget_point("test")
 
-    threshold = np.exp(np.mean(np.log(benign_scores)) +
-                       3 * np.std(np.log(benign_scores)))
+    threshold = np.exp(np.mean(np.log(benign_scores))
+                       + 3 * np.std(np.log(benign_scores)))
     # malicious_labels = malicious_scores > threshold
     benign_labels = benign_scores > threshold
     adversarial_labels = adversarial_scores > threshold
@@ -141,7 +143,7 @@ def eval_ml(clf, benign, malicious, adversarial, replay, split, name, malicious_
         # decision function is shifted so that 0 is threshold
         np.savetxt(malicious_file + "_{}_threshold.csv".format(name),
                    [0], delimiter=",")
-        threshold=0
+        threshold = 0
         num_pos = np.sum(benign_score > threshold)
         mal_pos = np.sum(malicious_score > threshold)
         num_pos_adv = np.sum(adversarial_score > threshold)
@@ -198,8 +200,8 @@ def eval_som(benign, malicious, adversarial, replay, split, malicious_file, out_
     benign_quantization_errors = np.linalg.norm(
         som.quantization(benign) - benign, axis=1)
 
-    error_treshold = np.exp(np.mean(np.log(benign_quantization_errors)) +
-                            3 * np.std(np.log(benign_quantization_errors)))
+    error_treshold = np.exp(np.mean(np.log(benign_quantization_errors))
+                            + 3 * np.std(np.log(benign_quantization_errors)))
 
     # print('Error treshold:', error_treshold)
     adversarial_quantization_errors = np.linalg.norm(
@@ -220,8 +222,6 @@ def eval_som(benign, malicious, adversarial, replay, split, malicious_file, out_
     num_pos = np.sum(malicious_label)
     num_pos_adv = np.sum(adversarial_label)
     num_pos_rep = np.sum(replay_label)
-    print(",".join(map(str, [malicious_file, "som",
-                             ben_pos, num_pos, num_pos_adv, num_pos_rep])))
 
     plot_result(np.concatenate((benign_quantization_errors, malicious_quantization_error,
                                 adversarial_quantization_errors, replay_quantization_errors)), out_name, hline=error_treshold, split=split)
@@ -237,6 +237,7 @@ def eval_som(benign, malicious, adversarial, replay, split, malicious_file, out_
 
 def eval_ml_models(benign, malicious, adversarial, replay, clfs, file_name, malicious_file):
     split = [len(benign), len(malicious), len(adversarial)]
+
     eval_som(benign, malicious, adversarial, replay, split,
              malicious_file, file_name + "_som")
 
