@@ -10,7 +10,8 @@ __pycache__/
 
 # C extensions
 *.so
-
+dataset/
+code/evaluations/fig/
 # Distribution / packaging
 .Python
 build/

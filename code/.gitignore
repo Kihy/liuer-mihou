@@ -14,8 +14,7 @@ network_graphs/
 # C extensions
 *.so
 
-code/evaluations/fig/
-dataset/
+evaluations/fig/
 
 # Distribution / packaging
 .Python
