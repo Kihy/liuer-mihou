@@ -33,7 +33,7 @@ def train_normal(params):
 
     """
     # Build Kitsune
-    K = KitNET(100, params["maxAE"], params["FMgrace"],
+    K = KitNET(params["n_features"], params["maxAE"], params["FMgrace"],
                params["ADgrace"], 0.1, 0.75, normalize=params["normalize"])
 
     input_file = open(params["path"], "r")

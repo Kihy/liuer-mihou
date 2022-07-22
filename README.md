@@ -6,9 +6,7 @@
 ### Folder structure
 - /code contains code for pso framework
 The following folders are omitted due to size constraints
-- /experiment contains experiment results
-- /ku_dataset contains pcap files used for experiments, replace with your own dataset
-- /models contains trained anomaly detection models
+- /dataset contains pcap files used for experiments, replace with your own dataset
 
 ### Code
 - /after_image contains original and modified implementation of Kitsune's feature extractor, AfterImage. Files with CamelCase are original implementation and files with underscore is modified implementation.

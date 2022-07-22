@@ -12,22 +12,35 @@ import rrcf
 import time
 from tqdm import tqdm
 from minisom import MiniSom
+import scipy.sparse as sp
 matplotlib.rcParams["figure.figsize"] = [15, 6]
 
 
-def load_dataset(benign_path, malicious_path, adversarial_path, replay_path):
+def load_dataset(benign_path, malicious_path=None, adversarial_path=None, replay_path=None):
+
     scaler = MinMaxScaler()
-    benign = np.genfromtxt(benign_path, delimiter=",", skip_header=1)[:, :100]
+    benign = np.genfromtxt(benign_path, delimiter=",", skip_header=1)[:, :57]
     # only take first 100 columns
     benign = scaler.fit_transform(benign)
-    malicious = np.genfromtxt(
-        malicious_path, delimiter=",", skip_header=1)[:, :100]
-    malicious = scaler.transform(malicious)
-    adversarial = np.genfromtxt(
-        adversarial_path, delimiter=",", skip_header=1)[:, :100]
-    adversarial = scaler.transform(adversarial)
-    replay = np.genfromtxt(replay_path, delimiter=",", skip_header=1)[:, :100]
-    replay = scaler.transform(replay)
+
+    if malicious_path is not None:
+        malicious = np.genfromtxt(
+            malicious_path, delimiter=",", skip_header=1)[:, :57]
+        malicious = scaler.transform(malicious)
+    else:
+        malicious = None
+    if adversarial_path is not None:
+        adversarial = np.genfromtxt(
+            adversarial_path, delimiter=",", skip_header=1)[:, :57]
+        adversarial = scaler.transform(adversarial)
+    else:
+        adversarial = None
+    if replay_path is not None:
+        replay = np.genfromtxt(
+            replay_path, delimiter=",", skip_header=1)[:, :57]
+        replay = scaler.transform(replay)
+    else:
+        replay = None
     return benign, malicious, adversarial, replay
 
 
@@ -51,7 +64,7 @@ def plot_result(scores, out_name, split=None, hline=None):
     plt.clf()
 
 
-def eval_rrcf(benign, malicious, adversarial, replay, split, malicious_file, out_name):
+def eval_rrcf(benign, malicious, adversarial, replay, malicious_file, out_name):
 
     tree = rrcf.RCTree(benign)
 
@@ -81,17 +94,17 @@ def eval_rrcf(benign, malicious, adversarial, replay, split, malicious_file, out
 
     threshold = np.exp(np.mean(np.log(benign_scores))
                        + 3 * np.std(np.log(benign_scores)))
-    # malicious_labels = malicious_scores > threshold
+    malicious_labels = malicious_scores > threshold
     benign_labels = benign_scores > threshold
     adversarial_labels = adversarial_scores > threshold
     replay_labels = replay_scores > threshold
 
     ben_pos = np.sum(benign_labels)
-    # num_pos = np.sum(malicious_labels)
+    num_pos = np.sum(malicious_labels)
     num_pos_adv = np.sum(adversarial_labels)
     num_pos_rep = np.sum(replay_labels)
-    # print(",".join(map(str, [malicious_file, "rrcf",
-    #                          ben_pos, num_pos, num_pos_adv, num_pos_rep])))
+    print(",".join(map(str, [malicious_file, "rrcf",
+                             ben_pos, num_pos, num_pos_adv, num_pos_rep])))
 
     # plot_result(labels, out_name)
 
@@ -105,69 +118,71 @@ def eval_rrcf(benign, malicious, adversarial, replay, split, malicious_file, out
                replay_scores, delimiter=",")
 
 
-def eval_ml(clf, benign, malicious, adversarial, replay, split, name, malicious_file, out_name):
+def eval_ml(clf, benign, malicious, adversarial, replay, name, malicious_file, out_name):
+
+    if name == "frocc":
+        benign = sp.csc_matrix(benign, dtype=np.float32)
+
     clf.fit(benign)
-
-    # if name == "lof":
-    #     benign_scores = clf.negative_outlier_factor_
-    # else:
-    #     benign_scores = clf.decision_function(train)
-    #
-    # if name == "if":
-    #     malicious_scores = 1 / (clf.decision_function(test) + 1)
-    #     benign_scores = 1 / (benign_scores + 1)
-    # else:
-    #     malicious_scores = -clf.decision_function(test)
-    #     benign_scores = -benign_scores
-
-    # only ee does not require inversion
-    # if name is not "ee":
-    #     benign_scores = -benign_scores
-    #     malicious_scores = -malicious_scores
 
     # in sk models, -1 is outlier and 1 is inlier, we want 0 to be inlier, 1 to be outlier
 
-    if name in ["lof", "ocsvm"]:
-        # inverted since large values are inliers by default
-        benign_score = -clf.decision_function(benign)
-        malicious_score = -clf.decision_function(malicious)
-        adversarial_score = -clf.decision_function(adversarial)
-        replay_score = -clf.decision_function(replay)
+    # inverted since large values are inliers by default
+    if name in ["lof", "ocsvm", "frocc", "if", "ee"]:
+        invert = -1
+    else:
+        invert = 1
+    benign_score = invert*clf.decision_function(benign)
+    # decision function is shifted so that 0 is threshold
+    if name == "frocc":
+        threshold = np.mean(benign_score)+3*np.std(benign_score)
+    else:
+        threshold = 0
+
+    np.savetxt(malicious_file + "_{}_threshold.csv".format(name),
+               [threshold], delimiter=",")
+
+    num_pos = np.sum(benign_score > threshold)
+    if malicious is not None:
+        if name == "frocc":
+            malicious = sp.csc_matrix(malicious, dtype=np.float32)
+        malicious_score = invert*clf.decision_function(malicious)
         np.savetxt(malicious_file + "_{}_score.csv".format(name),
                    malicious_score, delimiter=",")
+        mal_pos = np.sum(malicious_score > threshold)
+    else:
+        mal_pos = None
+    if adversarial is not None:
+        if name == "frocc":
+            adversarial = sp.csc_matrix(adversarial, dtype=np.float32)
+        adversarial_score = invert*clf.decision_function(adversarial)
         np.savetxt(malicious_file + "_adv_{}_score.csv".format(name),
                    adversarial_score, delimiter=",")
+        num_pos_adv = np.sum(adversarial_score > threshold)
+    else:
+        num_pos_adv = None
+    if replay is not None:
+        if name == "frocc":
+            replay = sp.csc_matrix(replay, dtype=np.float32)
+        replay_score = invert*clf.decision_function(replay)
         np.savetxt(malicious_file + "_rep_{}_score.csv".format(name),
                    replay_score, delimiter=",")
-        plot_result(np.concatenate((benign_score, malicious_score)), out_name)
-        # decision function is shifted so that 0 is threshold
-        np.savetxt(malicious_file + "_{}_threshold.csv".format(name),
-                   [0], delimiter=",")
-        threshold = 0
-        num_pos = np.sum(benign_score > threshold)
-        mal_pos = np.sum(malicious_score > threshold)
-        num_pos_adv = np.sum(adversarial_score > threshold)
         num_pos_rep = np.sum(replay_score > threshold)
     else:
-        benign_label = np.clip(- clf.predict(benign), 0, 1)
-        malicious_label = np.clip(- clf.predict(malicious), 0, 1)
-        adversarial_label = np.clip(- clf.predict(adversarial), 0, 1)
-        replay_label = np.clip(- clf.predict(replay), 0, 1)
+        num_pos_rep = None
 
-        num_pos = np.sum(benign_label)
-        mal_pos = np.sum(malicious_label)
-        num_pos_adv = np.sum(adversarial_label)
-        num_pos_rep = np.sum(replay_label)
-    print(",".join(map(str, [malicious_file, name,
+    print(",".join(map(str, [malicious_file, name, threshold,
                              num_pos, mal_pos, num_pos_adv, num_pos_rep])))
+    plot_result(np.concatenate((benign_score, malicious_score)),
+                out_name, hline=threshold)
 
     # print(name)
     # print(clf.get_params())
 
 
-def eval_som(benign, malicious, adversarial, replay, split, malicious_file, out_name):
-    som = MiniSom(25, 25, 100, sigma=5, learning_rate=3)
-    som.train(benign, 100)
+def eval_som(benign, malicious, adversarial, replay, malicious_file, out_name):
+    som = MiniSom(25, 25, 57, sigma=5, learning_rate=3)
+    som.train(benign, 57)
 
     # plt.figure(figsize=(7, 7))
     # frequencies = som.activation_response(train)
@@ -223,8 +238,11 @@ def eval_som(benign, malicious, adversarial, replay, split, malicious_file, out_
     num_pos_adv = np.sum(adversarial_label)
     num_pos_rep = np.sum(replay_label)
 
+    print(",".join(map(str, [malicious_file, "som",
+                             ben_pos, num_pos, num_pos_adv, num_pos_rep])))
+
     plot_result(np.concatenate((benign_quantization_errors, malicious_quantization_error,
-                                adversarial_quantization_errors, replay_quantization_errors)), out_name, hline=error_treshold, split=split)
+                                adversarial_quantization_errors, replay_quantization_errors)), out_name, hline=error_treshold)
 
     np.savetxt(malicious_file + "_som_score.csv",
                malicious_quantization_error, delimiter=",")
@@ -236,14 +254,13 @@ def eval_som(benign, malicious, adversarial, replay, split, malicious_file, out_
 
 
 def eval_ml_models(benign, malicious, adversarial, replay, clfs, file_name, malicious_file):
-    split = [len(benign), len(malicious), len(adversarial)]
 
-    eval_som(benign, malicious, adversarial, replay, split,
+    eval_som(benign, malicious, adversarial, replay,
              malicious_file, file_name + "_som")
 
-    for i in clfs.keys():
-        eval_ml(clfs[i], benign, malicious, adversarial, replay, split, i,
-                malicious_file, file_name + "_{}".format(i))
+    # for i in clfs.keys():
+    #     eval_ml(clfs[i], benign, malicious, adversarial, replay, i,
+    #             malicious_file, file_name + "_{}".format(i))
 
-    eval_rrcf(benign, malicious, adversarial, replay, split,
+    eval_rrcf(benign, malicious, adversarial, replay,
               malicious_file, file_name + "_rrcf")
