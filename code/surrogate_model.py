@@ -125,11 +125,11 @@ def train_surrogate(params):
     scaler = MinMaxScaler()
     print("preprocessing data")
     for chunk in tqdm(dataset):
-        scaler.partial_fit(chunk)
+        scaler.partial_fit(chunk.to_numpy())
 
-    with open(params["model_path"] + "_scaler_flow.pkl", "wb") as scaler_file:
+    with open(params["model_path"] + "_scaler.pkl", "wb") as scaler_file:
         pickle.dump(scaler, scaler_file)
-        print("scaler saved at", params["model_path"] + "_scaler_flow.pkl")
+        print("scaler saved at", params["model_path"] + "_scaler.pkl")
 
     dataset = pd.read_csv(params["path"], header=0, dtype="float32",
                           chunksize=10000000, usecols=list(range(input_dim)))
@@ -185,7 +185,7 @@ def eval_surrogate(path, model_path, threshold=None,  out_image=None, ignore_ind
     dataset = pd.read_csv(path, header=0,
                           chunksize=10000000, usecols=list(range(input_dim)))
 
-    with open(model_path + "_scaler_flow.pkl", "rb") as scaler_file:
+    with open(model_path + "_scaler.pkl", "rb") as scaler_file:
         scaler = pickle.load(scaler_file)
 
     if out_image == None:

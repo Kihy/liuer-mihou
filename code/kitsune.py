@@ -3,21 +3,16 @@ import datetime
 import matplotlib.ticker as ticker
 import matplotlib.dates as mdate
 import sklearn.metrics as metrics
-from itertools import product
 from tqdm import tqdm
-from matplotlib import cm
 from matplotlib import pyplot as plt
-from scipy.stats import norm
 import numpy as np
 import pickle
 from KitNET.KitNET import KitNET
 import matplotlib
 import socket
 from evaluations.feature_squeeze import squeeze_features
-import multiprocessing as mp
 matplotlib.use('Agg')
 np.set_printoptions(threshold=np.inf)
-# matplotlib.rcParams['timezone']="Pacific/Auckland"
 
 
 def train_normal(params):
@@ -47,7 +42,7 @@ def train_normal(params):
         if not feature_vector:
             break
         fv = feature_vector.rstrip().split(",")
-        fv = fv[:100]
+        fv = fv[:params["n_features"]]
         fv = np.array(fv, dtype="float")
         K.process(fv)
         count += 1
@@ -60,7 +55,7 @@ def train_normal(params):
         pickle.dump(K, of)
 
 
-def eval_kitsune(path, model_path, threshold=None, ignore_index=-1, out_image=None, meta_file=None, record_scores=False, y_true=None, record_prediction=False, load_prediction=False, plot_with_time=False):
+def eval_kitsune(path, model_path, n_features=100, threshold=None, ignore_index=-1, out_image=None, meta_file=None, record_scores=False, y_true=None, record_prediction=False, load_prediction=False, plot_with_time=False):
     """
     evaluates trained kitsune model on some traffic.
 
@@ -121,7 +116,7 @@ def eval_kitsune(path, model_path, threshold=None, ignore_index=-1, out_image=No
             colours = None
 
         feature_vector = input_file.readline()
-        while feature_vector is not '':
+        while feature_vector != '':
 
             if counter < ignore_index:
                 feature_vector = input_file.readline()
@@ -134,7 +129,7 @@ def eval_kitsune(path, model_path, threshold=None, ignore_index=-1, out_image=No
 
             fv = feature_vector.rstrip().split(",")
 
-            if len(fv) == 102:
+            if len(fv) == n_features + 2:
                 label = fv[-2]
                 if label.isdigit():
                     try:
@@ -145,8 +140,10 @@ def eval_kitsune(path, model_path, threshold=None, ignore_index=-1, out_image=No
                     label_map.append(label)
 
                 labels.append(label_map.index(label))
-                times.append(mdate.epoch2num(float(fv[-1])) + 1)
-                fv = fv[:100]
+                t = datetime.datetime.utcfromtimestamp(float(fv[-1]))
+                times.append(mdate.date2num(t) + 1)
+                # times.append(mdate.epoch2num(float(fv[-1])) + 1)  # epoch2num() is deprecated.
+                fv = fv[:n_features]
 
             fv = np.array(fv, dtype="float")
 
@@ -270,7 +267,8 @@ def eval_kitsune(path, model_path, threshold=None, ignore_index=-1, out_image=No
             leg = ax1.legend(handles=scatter.legend_elements()[0], labels=labels, bbox_to_anchor=(1.01, 1),
                              loc='upper left', borderaxespad=0.)
             for lh in leg.legendHandles:
-                lh._legmarker.set_alpha(1.)
+                # lh._legmarker.set_alpha(1.)   # AttributeError: 'Line2D' object has no attribute '_legmarker'
+                lh.set_alpha(1.)
 
         elif has_meta:
             ax1.scatter(x_val, rmse_array, s=1, c=colours)
