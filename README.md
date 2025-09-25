@@ -1,12 +1,26 @@
 # Liuer Mihou
 ## A Practical Adversarial Generation Framework
 
-***Note the exact Kitsune training parameters and surrogate parameters is different from the paper***
+***Note: The exact Kitsune training parameters and surrogate parameters may be different from the paper.***
+
+### Installation
+- The following commands assume that you are using mamba.
+If you don't have one, install mamba (or conda). 
+See [conda-forge/miniforge](https://github.com/conda-forge/miniforge#install).
+
+```commandline
+mamba create -n lm
+mamba activate lm
+mamba install python=3.8 pandas numpy matplotlib scikit-learn openpyxl tqdm ipython jupyter cython
+
+pip install tensorflow pyswarms rrcf minisom
+```
 
 ### Folder structure
 - /code contains code for pso framework
 The following folders are omitted due to size constraints
 - /dataset contains pcap files used for experiments, replace with your own dataset
+
 
 ### Code
 - /after_image contains original and modified implementation of Kitsune's feature extractor, AfterImage. Files with CamelCase are original implementation and files with underscore is modified implementation.
@@ -23,21 +37,19 @@ The following folders are omitted due to size constraints
 - vae.py contains code for variational autoencoder.
 
 ### Running this code
-1. pull docker image from [docker hub](https://hub.docker.com/repository/docker/kihy/deepo-nids). The image depends on [Deepo](https://github.com/ufoym/deepo) so install the dependencies for that first.
-2. run commands in commands.sh to start docker if you are on windows, linux should change the directory names and goto /code folder. All code should be run at this level.
-3. gather some normal traffic of your network, Google_Home_Mini sample is provided in dataset folder.
-4. gather some attack traffic with your attack, Port scan is provided in dataset folder.
-5. parse pcap files to csv files with parse_with_kitsune.py the csv file is in the same directory as the original
-6. train kitsune with train_normal() in kitsune.py and train surrogate with train() in surrogate_model.py. the trained models are in /models
-7. eval kitsune and surrogate model with eval() and eval_surrogate() with normal traffic to find the threshold value.
-8. (optional) evaluate the attack traffic on kitsune and surrogate model to see its anomaly pattern
-9. (optional) run /evaluations/similarity.py to see similarities between attacks. The script has to be run under /code directory
-10. run pso_framework.py to generate adversarial samples
+1. gather some normal traffic of your network, Google_Home_Mini sample is provided in dataset folder.
+2. gather some attack traffic with your attack, port scan, OS/service detection, and HTTP flooding samples are provided in dataset folder.
+3. parse pcap files to csv files with parse_with_kitsune.py the csv file is in the same directory as the original
+4. train kitsune with train_normal() in kitsune.py and train surrogate with train() in surrogate_model.py. the trained models are in /models
+5. eval kitsune and surrogate model with eval() and eval_surrogate() with normal traffic to find the threshold value.
+6. (optional) evaluate the attack traffic on kitsune and surrogate model to see its anomaly pattern
+7. (optional) run /evaluations/similarity.py to see similarities between attacks. The script has to be run under /code directory
+8. run pso_framework.py to generate adversarial samples
 
 The above steps are also outlined in run_experiments.py
 
 ### Results structure
-By default all results are saved in /experiment/traffic_shaping/{attack name}. Under the folder there are serveral folders
+By default, all results are saved in /experiment/traffic_shaping/{attack name}. Under the folder there are several folders
 - /png contains plots of anomaly Scores
 - /meta contains meta files
 - /logs contains logs and reports of each run
