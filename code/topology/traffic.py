@@ -113,7 +113,7 @@ def _animate(i, data, plot, original_time, ax):
     current_pos = data[i]
     current_pos[:, 0] -= original_time
     current_pos = current_pos[:, :2]
-    if i is not 0:
+    if i != 0:
         colours = ["#1EFFEF" for i in range(current_pos.shape[0])]
         colours[-1] = "black"
         ax.scatter(x=data[i - 1][:, 0], y=data[i - 1]

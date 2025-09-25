@@ -76,7 +76,7 @@ def eval_feature_squeeze(path, model_path, out_name, precision, threshold=None):
     tbar = tqdm()
 
     feature_vector = input_file.readline()
-    while feature_vector is not '':
+    while feature_vector != '':
         fv = feature_vector.rstrip().split(",")
 
         #remove label if there is one
