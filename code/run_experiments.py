@@ -148,9 +148,10 @@ def adv_defences(benign_file, kitsune_path, malicious_file, adversarial_file, re
 def main():
     # Step 0: Filter attack traffic
 
-    """ We have several types of attacks in the dataset, you can choose one to run the experiments. """
-    # attack_type, attacker_ip = "Port_scan", "192.168.10.30"
-    attack_type, attacker_ip = "OS_Service_Detection", "192.168.10.30"
+    """ We have several types of attacks in the dataset, you can choose one to run the experiments.
+        However, Steps 6–8 are only available for the port scan attack. """
+    attack_type, attacker_ip = "Port_scan", "192.168.10.30"
+    # attack_type, attacker_ip = "OS_Service_Detection", "192.168.10.30"
     # attack_type, attacker_ip = "HTTP_Flooding", "192.168.10.7"
     """ ------------------------------------------------------------------------------------------- """
 

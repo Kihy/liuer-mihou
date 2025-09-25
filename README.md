@@ -16,6 +16,8 @@ mamba install python=3.8 pandas numpy matplotlib scikit-learn openpyxl tqdm ipyt
 pip install tensorflow pyswarms rrcf minisom
 ```
 
+- Download the [IoT-Environment-Dataset](https://ocslab.hksecurity.net/Datasets/iot-environment-dataset) and place the pcap files in /dataset folder.
+
 ### Folder structure
 - /code contains code for pso framework
 The following folders are omitted due to size constraints
@@ -38,7 +40,7 @@ The following folders are omitted due to size constraints
 
 ### Running this code
 1. gather some normal traffic of your network, Google_Home_Mini sample is provided in dataset folder.
-2. gather some attack traffic with your attack, port scan, OS/service detection, and HTTP flooding samples are provided in dataset folder.
+2. gather some attack traffic with your attack, Port scan sample is provided in dataset folder.
 3. parse pcap files to csv files with parse_with_kitsune.py the csv file is in the same directory as the original
 4. train kitsune with train_normal() in kitsune.py and train surrogate with train() in surrogate_model.py. the trained models are in /models
 5. eval kitsune and surrogate model with eval() and eval_surrogate() with normal traffic to find the threshold value.
